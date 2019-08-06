@@ -7,8 +7,14 @@ const TelegramBot = require('node-telegram-bot-api');
 const token = 'ask for token';
 const bot = new TelegramBot(token, {polling: true});
 var app = express();
-var arduinoSerialPort = '/dev/ttyUSB0';	//Serial port over USB connection between the Raspberry Pi and the Arduino
+var proxy = require('express-http-proxy');
+var arduinoSerialPort = '/dev/ttyACM0';	//Serial port over USB connection between the Raspberry Pi and the Arduino
+var CryptoJS = require('node-cryptojs-aes').CryptoJS;
+const key = "d6F3Efeq";
+const isEncrypt = true;
+
 var restUrl;
+var restID;
 var sshUrl;
 
 // Matches "/echo [whatever]"
@@ -19,9 +25,12 @@ bot.onText(/\/echo (.+)/, (msg, match) => {
   
 	const chatId = msg.chat.id;
 	const resp = match[1]; // the captured "whatever"
+
+
+	const baseURL= 'http://saiio.000webhostapp.com/#/cell/';
   
 	// send back the matched "whatever" to the chat
-	bot.sendMessage(chatId, restUrl);
+	bot.sendMessage(chatId, baseURL + restID);
   });
 
 //Connect ngrok to rest API
@@ -32,12 +41,13 @@ bot.onText(/\/echo (.+)/, (msg, match) => {
 		authtoken : '22Ywb26viDtAwYjnouhBp_3CmqyRhsJ1tWC3qxzRbwq'
 	});
     console.log("Ngrok connected [localhost:8001] at url: ["+restUrl+"]");
+	restID = restUrl.split('/')[2].split('.')[0];
 })();
 
 //Connect ngrok to SSH
 (async function () {
     sshUrl = await ngrok.connect({
-		proto : 'http',
+		proto : 'tcp',
 		addr : 22,
 		authtoken : '22Ywb26viDtAwYjnouhBp_3CmqyRhsJ1tWC3qxzRbwq'
 	});
@@ -54,9 +64,7 @@ app.get('/data', (req, res) => {
 	res.send(cell);
 });
 
-app.get('/', (req, res) => {
-	res.status(200).send("Welcome to cell "+restUrl)
-  })
+app.use('/icecast', proxy('http://localhost:8000'));
 
 http.createServer(app).listen(8001, () => {
 	console.log('Server started at http://localhost:8001');
@@ -88,12 +96,24 @@ parser.on('data', function (data)
 	{
 		var myJsonObject = JSON.parse(data); //change to obj
 		myJsonObject.dateLastInfo = new Date(); //add something
-		myJsonObject.id = restUrl;
+		myJsonObject.id = restID;
 		data = JSON.stringify(myJsonObject);
-		cell=data;
+		if (isEncrypt){
+			cell=encrypt(data);
+		} else{
+			cell=data;
+		}
 	}
 	catch (ex)
 	{
 		console.warn(ex);
 	}
 });
+
+const encrypt = (text) => {
+	try {
+    return CryptoJS.AES.encrypt(text, key).toString();
+	} catch (ex) {
+			console.log(ex);
+	}
+}
