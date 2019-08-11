@@ -97,6 +97,7 @@ parser.on('data', function (data)
 		var myJsonObject = JSON.parse(data); //change to obj
 		myJsonObject.dateLastInfo = new Date(); //add something
 		myJsonObject.id = restID;
+		myJsonObject.bat = parseInt(myJsonObject.bat * 1142 / 5070, 10);
 		data = JSON.stringify(myJsonObject);
 		if (isEncrypt){
 			cell=encrypt(data);
