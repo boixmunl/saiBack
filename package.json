@@ -15,5 +15,15 @@
   "bugs": {
     "url": "https://github.com/boixmunl/saiBack/issues"
   },
-  "homepage": "https://github.com/boixmunl/saiBack#readme"
+  "homepage": "https://github.com/boixmunl/saiBack#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "express-http-proxy": "^1.5.1",
+    "ngrok": "^3.2.5",
+    "node-cryptojs-aes": "^0.4.0",
+    "node-static": "^0.7.11",
+    "node-telegram-bot-api": "^0.30.0",
+    "serialport": "^7.1.5",
+    "sqlite3": "^4.0.9"
+  }
 }

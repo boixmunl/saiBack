@@ -16,6 +16,12 @@ var db = new sqlite3.Database('./piBat.db');
 const key = "d6F3Efeq";
 const isEncrypt = true;
 
+// Use node-static module to server chart for client-side dynamic graph
+var nodestatic = require('node-static');
+
+// Setup static server for current directory
+var staticServer = new nodestatic.Server(".");
+
 var restUrl;
 var restID;
 var sshUrl;
@@ -98,9 +104,10 @@ parser.on('data', function (data)
 	try
 	{
 		var myJsonObject = JSON.parse(data); //change to obj
+		bat = parseInt(myJsonObject.bat * 1142 / 5070, 10);
 		myJsonObject.dateLastInfo = new Date(); //add something
 		myJsonObject.id = restID;
-		myJsonObject.bat = parseInt(myJsonObject.bat * 1142 / 5070, 10);
+		myJsonObject.bat = bat;
 		data = JSON.stringify(myJsonObject);
 		if (isEncrypt){
 			cell=encrypt(data);
@@ -126,44 +133,29 @@ function insertBat(data){
 	// data is a javascript object   
 	var statement = db.prepare("INSERT INTO battery_records VALUES (?, ?)");
 	// Insert values into prepared statement
-	statement.run(data.battery_record[0].unix_time, data.battery_record[0].celsius);
+	statement.run(data.battery_record[0].unix_time, data.battery_record[0].charge);
 	// Execute the statement
 	statement.finalize();
 }
 
 function readBat(callback){
-	fs.readFile('/sys/bus/w1/devices/28-00000400a88a/w1_slave', function(err, buffer)
- {
-		 if (err){
-				console.error(err);
-				process.exit(1);
-		 }
+	// Round to one decimal place
+	bat = Math.round(bat / 10000) / 10;
 
-		 // Read data from file (using fast node ASCII encoding).
-		 var data = buffer.toString('ascii').split(" "); // Split by space
-
-		 // Extract battery from string and divide by 1000 to give celsius
-		 var bat  = parseFloat(data[data.length-1].split("=")[1])/1000.0;
-
-		 // Round to one decimal place
-		 bat = Math.round(bat * 10) / 10;
-
-		 // Add date/time to battery
-		var data = {
-					 battery_record:[{
-					 unix_time: Date.now(),
-					 charge: bat
-					 }]};
-
-		 // Execute call back with data
-		 callback(data);
-	});
+	// Add date/time to battery
+	var data = {
+		battery_record:[{
+		unix_time: Date.now(),
+		charge: bat  
+		}]};
+	// Execute call back with data
+	callback(data);
 };
 
 function logBat(interval){
 	// Call the readBat function with the insertBat function as output to get initial reading
 	readBat(insertBat);
-	// Set the repeat interval (milliseconds). Third argument is passed as callback function to first (i.e. readTemp(insertTemp)).
+	// Set the repeat interval (milliseconds). Third argument is passed as callback function to first (i.e. readBat(insertBat)).
 	setInterval(readBat, interval, insertBat);
 };
 
@@ -179,10 +171,86 @@ function selectBat(num_records, start_date, callback){
 				console.log('Error serving querying database. ' + err);
 				return;
 						 }
-				data = {battery_record:[rows]}
+				var data = {battery_record:[rows]}
 				callback(data);
 	});
 };
+
+// Setup node http server
+var server = http.createServer(
+	// Our main server function
+	function(request, response)
+	{
+		// Grab the URL requested by the client and parse any query options
+		var url = require('url').parse(request.url, true);
+		var pathfile = url.pathname;
+      var query = url.query;
+
+		// Test to see if it's a database query
+		if (pathfile == '/battery_query.json'){
+         // Test to see if number of observations was specified as url query
+         if (query.num_obs){
+            var num_obs = parseInt(query.num_obs);
+         }
+         else{
+         // If not specified default to 20. Note use -1 in query string to get all.
+            var num_obs = -1;
+         }
+         if (query.start_date){
+            var start_date = query.start_date;
+         }
+         else{
+            var start_date = '1970-01-01T00:00';
+         }   
+         // Send a message to console log
+         console.log('Database query request from '+ request.connection.remoteAddress +' for ' + num_obs + ' records from ' + start_date+'.');
+         // call selectBat function to get data from database
+         selectBat(num_obs, start_date, function(data){
+            response.writeHead(200, { "Content-type": "application/json" });		
+	         response.end(JSON.stringify(data), "ascii");
+         });
+      return;
+      }
+      
+      // Test to see if it's a request for current battery   
+      if (pathfile == '/battery_now.json'){
+            readBat(function(data){
+			      response.writeHead(200, { "Content-type": "application/json" });		
+			      response.end(JSON.stringify(data), "ascii");
+               });
+      return;
+      }
+      
+      // Handler for favicon.ico requests
+		if (pathfile == '/favicon.ico'){
+			response.writeHead(200, {'Content-Type': 'image/x-icon'});
+			response.end();
+
+			// Optionally log favicon requests.
+			//console.log('favicon requested');
+			return;
+		}
+
+
+		else {
+			// Print requested file to terminal
+			console.log('Request from '+ request.connection.remoteAddress +' for: ' + pathfile);
+
+			// Serve file using node-static			
+			staticServer.serve(request, response, function (err, result) {
+					if (err){
+						// Log the error
+						sys.error("Error serving " + request.url + " - " + err.message);
+						
+						// Respond to the client
+						response.writeHead(err.status, err.headers);
+						response.end('Error 404 - file not found');
+						return;
+						}
+					return;	
+					})
+		}
+}).listen(8002);
 
 // Start battery logging (every 5 min).
 var msecs = (60 * 5) * 1000; // log interval duration in milliseconds
