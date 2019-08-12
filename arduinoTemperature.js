@@ -212,14 +212,11 @@ function insertBat(data){
 }
 
 function readBat(callback){
-	// Round to one decimal place
-	bat = Math.round(bat / 10000) / 10;
-
 	// Add date/time to battery
 	var data = {
 		battery_record:[{
 		unix_time: Date.now(),
-		charge: bat  
+		charge: bat / 1000
 		}]};
 	// Execute call back with data
 	callback(data);
