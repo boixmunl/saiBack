@@ -17,6 +17,9 @@ const key = "d6F3Efeq";
 const isEncrypt = true;
 var arduinoSerialPort = '/dev/ttyACM0';
 const token = '799864144:AAFYArmIUiBmZaUCqxaolRA5Taj3Gnnogds';
+const DODalert = 50;
+const lowBatAlert = 30;
+const loaction= 'Sant Vicenç de Montalt, C/ Sol Naixent';
 
 //Variables
 const bot = new TelegramBot(token, { polling: true });
@@ -31,8 +34,14 @@ var restUrl;
 var restID;
 var sshUrl;
 var cell = 'NaN';
-var bat = NaN
+var batVolt = NaN;
+var batPercent = NaN;
 var date = NaN;
+var chatId = NaN;
+var dodFlag = false;
+var lowFlag = false;
+
+//Constants
 
 // Matches "/echo [whatever]"
 bot.onText(/\/echo (.+)/, (msg, match) => {
@@ -40,7 +49,7 @@ bot.onText(/\/echo (.+)/, (msg, match) => {
 	// 'match' is the result of executing the regexp above on the text content
 	// of the message
 
-	const chatId = msg.chat.id;
+	chatId = msg.chat.id;
 	const resp = match[1]; // the captured "whatever"
 
 
@@ -159,11 +168,14 @@ http.createServer(app).listen(8001, () => {
 parser.on('data', function (data) {//When a new line of text is received from Arduino over USB
 	try {
 		var myJsonObject = JSON.parse(data); //change to obj
-		bat = parseInt(myJsonObject.bat * 1142 / 5070, 10);
+		batVolt = parseInt(myJsonObject.bat * 1142 / 5070, 10);
+		batPercent = batVoltToPercent(batVolt / 1000);
+		manageTelegramBatPercent(batPercent);
 		date = new Date();
 		myJsonObject.dateLastInfo = date;
 		myJsonObject.id = restID;
-		myJsonObject.bat = bat;
+		myJsonObject.batVolt = batVolt;
+		myJsonObject.batPercent = batPercent;
 		data = JSON.stringify(myJsonObject);
 		cell = encrypt(data);
 	}
@@ -199,7 +211,7 @@ function readBat(callback) {
 	var data = {
 		battery_record: [{
 			unix_time: Date.now(),
-			charge: bat / 1000
+			charge: batPercent
 		}]
 	};
 	// Execute call back with data
@@ -235,3 +247,42 @@ var msecs = (60 * 5) * 1000; // log interval duration in milliseconds
 logBat(msecs);
 // Send a message to console
 console.log('Server is logging to database at ' + msecs + 'ms intervals');
+
+function batVoltToPercent(voltage) {
+	if(voltage<11.8){
+		return 0;
+	}else if (voltage >= 11.8 && voltage <12){
+		let M = (25+11.8)/12;
+		let N = -11.8 * M;
+		return Math.round(M*voltage + N);
+	}else if (voltage >= 12 && voltage <12.2){
+		let M = (55+12)/12.2;
+		let N = -12 * M;
+		return Math.round(M*voltage + N);
+	}else if (voltage >= 12.2 && voltage <12.4){
+		let M = (75+12.2)/12.4;
+		let N = -12.2 * M;
+		return Math.round(M*voltage + N);
+	}else {
+		return 100;
+	}
+}
+
+function manageTelegramBatPercent(batPerc){
+	if (batPerc < DODalert && !dodFlag) {
+		dodFlag = true;
+		if (chatId){
+			bot.sendMessage(chatId, '[Atenció] El nivell de bateria de '+loaction+' ha baixat del '+batPerc+'%, mes informació: ' + baseURL + restID);
+		}
+	} else {
+		dodFlag= false;
+	}
+	if (batPerc < lowBatAlert && !lowFlag) {
+		lowFlag = true;
+		if (chatId){
+			bot.sendMessage(chatId, '[Alerta] El nivell de bateria de '+loaction+' ha baixat del '+batPerc+'%, mes informació: ' + baseURL + restID);
+		}
+	}else{
+		lowFlag = false;
+	}
+}
